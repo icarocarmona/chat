@@ -11,11 +11,6 @@ const server = require("http").createServer(app);
 const io = require("socket.io")(server);
 
 
-// Constants
-const PORT = 8080;
-const HOST = '0.0.0.0';
-
-
 async function push(data) {
   const producer = kafka.producer();
 
@@ -75,7 +70,8 @@ io.on("connection", (socket) => {
   });
 });
 
-app.listen(PORT, HOST);
-console.log(`Running on http://${HOST}:${PORT}`);
+server.listen(3000, () => {
+  console.log(`> Server listening on port: 3000`)
+})
 
 consumerMessages();
