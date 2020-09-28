@@ -10,6 +10,12 @@ const app = express();
 const server = require("http").createServer(app);
 const io = require("socket.io")(server);
 
+
+// Constants
+const PORT = 8080;
+const HOST = '0.0.0.0';
+
+
 async function push(data) {
   const producer = kafka.producer();
 
@@ -28,7 +34,7 @@ async function push(data) {
 }
 
 //  consumer
-async function getMessage() {
+async function consumerMessages() {
   const consumer = kafka.consumer({ groupId: "chat-test" });
 
   await consumer.connect();
@@ -69,6 +75,7 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3000);
+app.listen(PORT, HOST);
+console.log(`Running on http://${HOST}:${PORT}`);
 
-getMessage();
+consumerMessages();
