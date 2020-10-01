@@ -1,19 +1,41 @@
-const { Socket } = require("dgram");
 const express = require("express");
 const path = require("path");
+const config = require("./config");
 
 const { Kafka } = require("kafkajs");
-const config = require("./config");
 const kafka = new Kafka(config);
 
 const app = express();
 const server = require("http").createServer(app);
 const io = require("socket.io")(server);
 
+var clients = {};
 
-async function push(data) {
+async function consumerMessages() {
+  const consumer = kafka.consumer({ groupId: "queue-chat" });
+
+  await consumer.connect();
+  await consumer.subscribe({ topic: config.kafka_topic, fromBeginning: true });
+
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+      console.log(JSON.parse(message.value.toString()));
+
+      var payload = JSON.parse(message.value.toString());
+      console.log(payload.author.toString());
+      console.log(payload.message.toString());
+
+      io.emit("chat", payload.author, payload.message);
+    },
+  });
+}
+
+async function producerMessage(client, msg) {
   const producer = kafka.producer();
-
+  var data = {
+    author: client,
+    message: msg,
+  };
   await producer.connect();
   await producer.send({
     topic: config.kafka_topic,
@@ -28,25 +50,26 @@ async function push(data) {
   await producer.disconnect();
 }
 
-//  consumer
-async function consumerMessages() {
-  const consumer = kafka.consumer({ groupId: "chat-test" });
-
-  await consumer.connect();
-  await consumer.subscribe({ topic: config.kafka_topic, fromBeginning: true });
-
-  await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
-      var payload = JSON.parse(message.value.toString());
-      console.log(payload.author.toString());
-      console.log(payload.message.toString());
-      console.log({
-        value: message.value.toString(),
-      });
-      io.emit("receivedMessage", payload);
-    },
+io.on("connection", function (client) {
+  client.on("join", function (name) {
+    console.log("Joined: " + name);
+    clients[client.id] = name;
+    client.emit("update", "You have connected to the server.");
+    client.broadcast.emit("update", name + " has joined the server.");
   });
-}
+
+  client.on("send", function (msg) {
+    console.log("Message: " + msg);
+    //client.broadcast.emit("chat", clients[client.id], msg);
+    producerMessage(clients[client.id], msg);
+  });
+
+  client.on("disconnect", function () {
+    console.log("Disconnect");
+    io.emit("update", clients[client.id] + " has left the server.");
+    delete clients[client.id];
+  });
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 app.set("views", path.join(__dirname, "public"));
@@ -57,21 +80,8 @@ app.use("/", (req, res) => {
   res.render("index.html");
 });
 
-let messsages = [];
-
-io.on("connection", (socket) => {
-  console.log(`Connection: ${socket.id}`);
-
-  socket.emit("previousMessages", messsages);
-  socket.on("sendMessage", (data) => {
-    messsages.push(data);
-    push(data).then();
-    // socket.broadcast.emit("receivedMessage", data);
-  });
-});
-
 server.listen(3000, () => {
-  console.log(`> Server listening on port: 3000`)
-})
+  console.log(`> Server listening on port: 3000`);
+});
 
 consumerMessages();
